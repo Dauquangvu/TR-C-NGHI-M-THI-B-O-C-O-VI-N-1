@@ -1206,14 +1206,392 @@ function pageResult(attemptId) {
 // TRANG XEM LAI BAI THI
 // ================================================================
 function pageReview(attemptId) {
-  var user = Auth.getCurrentUser();
-  if(!user){Router.navigate('login');return;}
-  var reviewData = ExamEngine.getReviewData(attemptId);
-  if(!reviewData){showToast('Không thể xem lại','error');Router.navigate('my-results');return;}
-  var attempt = reviewData.attempt;
-  var exam = reviewData.exam;
-  var questions = reviewData.questions;
-  var answers = reviewData.answers;
-  if(!exam.allowReview){showToast('Kỳ thi không cho phép xem đáp án','error');Router.navigate('my-results');return;}
+  const user = Auth.getCurrentUser();
+  if (!user) { Router.navigate('login'); return; }
+  const reviewData = ExamEngine.getReviewData(attemptId);
+  if (!reviewData) { showToast('Không thể xem lại bài thi này', 'error'); Router.navigate('my-results'); return; }
+  const { attempt, exam, questions, answers } = reviewData;
 
-  var currentQ =
+  // Kiem tra quyen xem dap an
+  if (!exam.allowReview) { showToast('Kỳ thi không cho phép xem đáp án', 'error'); Router.navigate('my-results'); return; }
+
+  let currentQ = 0;
+
+  function renderQ() {
+    const q = questions[currentQ];
+    if (!q) return;
+    const userAns = answers.find(a => a.questionId === q.id);
+    const selectedId = userAns?.selectedOptionId || null;
+    const isCorrect = selectedId === q.correctOptionId;
+    const isUnanswered = !selectedId;
+
+    const optsHtml = q.options.map(opt => {
+      let cls = 'option-item flex items-center gap-3';
+      let icon = '';
+      if (opt.id === q.correctOptionId) { cls += ' correct'; icon = '<i data-lucide="check-circle" class="w-5 h-5 text-emerald-600 shrink-0"></i>'; }
+      else if (opt.id === selectedId && opt.id !== q.correctOptionId) { cls += ' wrong'; icon = '<i data-lucide="x-circle" class="w-5 h-5 text-red-600 shrink-0"></i>'; }
+      else { icon = '<span class="w-5 shrink-0"></span>'; }
+      return `<div class="${cls}">${icon}<div class="w-8 h-8 rounded-lg ${opt.id === q.correctOptionId ? 'bg-emerald-600 text-white' : opt.id === selectedId ? 'bg-red-600 text-white' : 'bg-slate-100 text-slate-500'} flex items-center justify-center text-sm font-bold shrink-0">${opt.label}</div><span class="text-sm flex-1">${escHtml(opt.text)}</span></div>`;
+    }).join('');
+
+    const statusBadge = isUnanswered
+      ? '<span class="badge bg-slate-100 text-slate-600">Chưa trả lời</span>'
+      : isCorrect
+        ? '<span class="badge bg-emerald-100 text-emerald-700">Đúng</span>'
+        : '<span class="badge bg-red-100 text-red-700">Sai</span>';
+
+    const navBtns = questions.map((nq, i) => {
+      const na = answers.find(a => a.questionId === nq.id);
+      const sel = na?.selectedOptionId;
+      const correct = sel === nq.correctOptionId;
+      let bg = 'bg-slate-100 text-slate-500';
+      if (i === currentQ) bg = 'bg-primary-600 text-white';
+      else if (!sel) bg = 'bg-slate-200 text-slate-400';
+      else if (correct) bg = 'bg-emerald-100 text-emerald-700 border border-emerald-300';
+      else bg = 'bg-red-100 text-red-700 border border-red-300';
+      return `<button class="qnav-btn ${bg}" onclick="window._rvGoTo(${i})">${i + 1}</button>`;
+    }).join('');
+
+    const app = document.getElementById('app');
+    app.innerHTML = `<div class="min-h-screen bg-slate-50 flex flex-col">
+      <div class="bg-white border-b border-slate-200 sticky top-0 z-40 no-print">
+        <div class="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
+          <div class="flex items-center gap-3"><button onclick="Router.navigate('my-results')" class="p-2 rounded-lg hover:bg-slate-100 text-slate-400"><i data-lucide="arrow-left" class="w-5 h-5"></i></button><div><h1 class="font-bold text-slate-900 text-sm sm:text-base truncate max-w-[200px] sm:max-w-none">${escHtml(exam.title)}</h1><p class="text-xs text-slate-400">Xem lại bài thi</p></div></div>
+          <div class="flex items-center gap-2">${statusBadge}<span class="text-sm font-bold text-slate-900">${attempt.score}/${exam.totalScore}</span></div>
+        </div>
+      </div>
+      <div class="flex-1 flex flex-col lg:flex-row max-w-7xl mx-auto w-full">
+        <div class="flex-1 p-4 sm:p-6 lg:p-8">
+          <div class="bg-white rounded-2xl p-5 sm:p-6 border border-slate-100 shadow-sm mb-4 page-enter">
+            <div class="flex items-center gap-2 mb-4"><span class="badge bg-primary-100 text-primary-700">Câu ${currentQ + 1}</span>${q.level ? levelBadge(q.level) : ''}</div>
+            <p class="text-base sm:text-lg font-medium text-slate-900 leading-relaxed mb-6">${escHtml(q.content)}</p>
+            ${q.image ? `<img src="${q.image}" alt="" class="mb-6 max-h-48 rounded-xl object-contain bg-slate-50">` : ''}
+            <div class="space-y-3">${optsHtml}</div>
+            ${q.explanation ? `<div class="mt-6 p-4 bg-blue-50 rounded-xl border border-blue-100"><div class="flex items-center gap-2 mb-2 text-blue-700 font-semibold text-sm"><i data-lucide="lightbulb" class="w-4 h-4"></i>Giải thích</div><p class="text-sm text-blue-800 leading-relaxed">${escHtml(q.explanation)}</p></div>` : ''}
+          </div>
+          <div class="flex items-center justify-between">
+            <button onclick="window._rvPrev()" class="btn-press flex items-center gap-2 px-4 py-2.5 bg-white border border-slate-200 text-slate-700 rounded-xl text-sm font-semibold hover:bg-slate-50 ${currentQ === 0 ? 'opacity-50 pointer-events-none' : ''}"><i data-lucide="arrow-left" class="w-4 h-4"></i>Câu trước</button>
+            ${currentQ < questions.length - 1
+              ? `<button onclick="window._rvNext()" class="btn-press flex items-center gap-2 px-4 py-2.5 bg-primary-600 text-white rounded-xl text-sm font-semibold hover:bg-primary-700">Câu tiếp<i data-lucide="arrow-right" class="w-4 h-4"></i></button>`
+              : `<button onclick="Router.navigate('my-results')" class="btn-press flex items-center gap-2 px-4 py-2.5 bg-slate-800 text-white rounded-xl text-sm font-semibold hover:bg-slate-900">Hoàn thành</button>`}
+          </div>
+        </div>
+        <div class="lg:w-72 shrink-0 p-4 lg:py-6 lg:pr-6 no-print">
+          <div class="bg-white rounded-2xl p-4 border border-slate-100 shadow-sm sticky top-20">
+            <h3 class="font-bold text-sm text-slate-900 mb-3">Câu hỏi</h3>
+            <div class="flex flex-wrap gap-1.5 mb-3">${navBtns}</div>
+            <div class="flex gap-3 text-xs text-slate-400 mb-4 flex-wrap"><span class="flex items-center gap-1"><span class="w-3 h-3 rounded bg-emerald-100 border border-emerald-300"></span>Đúng</span><span class="flex items-center gap-1"><span class="w-3 h-3 rounded bg-red-100 border border-red-300"></span>Sai</span><span class="flex items-center gap-1"><span class="w-3 h-3 rounded bg-slate-200"></span>Bỏ qua</span></div>
+            <div class="grid grid-cols-3 gap-2 text-center text-xs">
+              <div class="bg-emerald-50 rounded-lg p-2"><div class="font-bold text-emerald-600">${attempt.totalCorrect}</div>Đúng</div>
+              <div class="bg-red-50 rounded-lg p-2"><div class="font-bold text-red-600">${attempt.totalWrong}</div>Sai</div>
+              <div class="bg-slate-50 rounded-lg p-2"><div class="font-bold text-slate-500">${attempt.totalUnanswered}</div>Bỏ</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>`;
+    lucide.createIcons();
+  }
+
+  window._rvGoTo = function (i) { currentQ = i; renderQ(); };
+  window._rvPrev = function () { if (currentQ > 0) { currentQ--; renderQ(); } };
+  window._rvNext = function () { if (currentQ < questions.length - 1) { currentQ++; renderQ(); } };
+
+  renderQ();
+}
+
+// ================================================================
+// TRANG 404
+// ================================================================
+function page404() {
+  const app = document.getElementById('app');
+  app.innerHTML = `<div class="min-h-screen flex items-center justify-center p-4 bg-slate-50">
+    <div class="text-center">
+      <div class="text-8xl font-extrabold text-slate-200 mb-4">404</div>
+      <h1 class="text-2xl font-bold text-slate-900 mb-2">Trang không tồn tại</h1>
+      <p class="text-slate-500 mb-6">URL bạn truy cập không hợp lệ.</p>
+      <a href="#/home" class="btn-press inline-flex items-center gap-2 px-6 py-3 bg-primary-600 text-white rounded-xl font-bold hover:bg-primary-700"><i data-lucide="home" class="w-4 h-4"></i>Về trang chủ</a>
+    </div>
+  </div>`;
+  lucide.createIcons();
+}
+
+// ================================================================
+// TRANG THONG TIN HE THONG
+// ================================================================
+function pageAbout() {
+  const app = document.getElementById('app');
+  app.innerHTML = `<div class="page-enter min-h-screen bg-slate-50">
+    <header class="bg-white border-b border-slate-200"><div class="max-w-4xl mx-auto px-4 sm:px-6 py-6"><h1 class="text-2xl font-bold text-slate-900">Hướng dẫn tham gia thi</h1></div></header>
+    <div class="max-w-4xl mx-auto px-4 sm:px-6 py-8 space-y-6">
+      ${[
+        { t: '1. Đăng nhập', d: 'Sử dụng tài khoản được cấp để đăng nhập vào hệ thống.' },
+        { t: '2. Chọn kỳ thi', d: 'Tìm kỳ thi đang mở và nhấn "Bắt đầu thi".' },
+        { t: '3. Làm bài', d: 'Chọn đáp án cho từng câu hỏi. Sử dụng bảng điều hướng để chuyển câu nhanh. Đánh dấu câu muốn xem lại.' },
+        { t: '4. Nộp bài', d: 'Khi hoàn thành, nhấn "Nộp bài". Hệ thống sẽ hỏi xác nhận trước khi nộp.' },
+        { t: '5. Xem kết quả', d: 'Hệ thống tự động chấm điểm và hiển thị kết quả ngay sau khi nộp.' },
+        { t: '6. Xem lại', d: 'Nếu kỳ thi cho phép, bạn có thể xem lại đáp án và giải thích.' },
+      ].map(s => `<div class="bg-white rounded-xl p-5 border border-slate-100 flex gap-4"><div class="w-10 h-10 rounded-xl bg-primary-50 flex items-center justify-center shrink-0"><i data-lucide="check-circle" class="w-5 h-5 text-primary-600"></i></div><div><h3 class="font-bold text-slate-900 mb-1">${s.t}</h3><p class="text-sm text-slate-500">${s.d}</p></div></div>`).join('')}
+      <div class="bg-amber-50 rounded-xl p-5 border border-amber-100"><div class="flex items-center gap-2 mb-2 text-amber-700 font-semibold"><i data-lucide="alert-triangle" class="w-5 h-5"></i>Lưu ý quan trọng</div><ul class="text-sm text-amber-800 space-y-1 list-disc pl-5"><li>Đừng rời khỏi tab thi — hành vi sẽ bị ghi nhận</li><li>Đồng hồ đếm ngược dựa trên server, không thể gian lận bằng reload</li><li>Hết giờ hệ thống sẽ tự động nộp bài</li><li>Mỗi câu chỉ được chọn 1 đáp án</li></ul></div>
+    </div>
+  </div>`;
+  lucide.createIcons();
+}
+
+// ================================================================
+// SEED DATABASE - Du lieu mau
+// ================================================================
+function seedDatabase() {
+  if (DB.data.users.length > 0) return; // Da co du lieu
+
+  // --- NGUOI DUNG ---
+  DB.createUser({ name: 'Quản trị viên', email: 'admin@exam.vn', password: 'admin123', role: 'admin', status: 'active', avatar: null });
+  DB.createUser({ name: 'Nguyễn Thị Hương', email: 'teacher@exam.vn', password: 'teacher123', role: 'teacher', status: 'active', avatar: null });
+  const studentIds = [];
+  ['Nguyễn Văn An', 'Trần Thị Bích', 'Lê Hoàng Nam', 'Phạm Minh Châu', 'Hoàng Đức Thắng'].forEach((n, i) => {
+    const u = DB.createUser({ name: n, email: `student${i + 1}@exam.vn`, password: 'student123', role: 'student', status: 'active', avatar: null });
+    studentIds.push(u.id);
+  });
+
+  // --- DANH MUC ---
+  const cat1 = DB.createCategory({ name: 'Lập trình cơ bản', description: 'Các câu hỏi về lập trình cơ bản' });
+  const cat2 = DB.createCategory({ name: 'Cơ sở dữ liệu', description: 'Các câu hỏi về cơ sở dữ liệu và SQL' });
+
+  // --- CAU HOI ---
+  // Helper tao cau hoi
+  function mkQ(content, opts, correctIdx, explanation, catId, level) {
+    const labels = ['A', 'B', 'C', 'D'];
+    const options = opts.map((text, i) => ({ id: DB._genId(), label: labels[i], text }));
+    return DB.createQuestion({
+      content, type: 'single_choice', categoryId: catId, level,
+      options, correctOptionId: options[correctIdx].id,
+      explanation: explanation || '', image: null, status: 'active'
+    });
+  }
+
+  // === DANH MUC 1: LAP TRINH CO BAN ===
+  mkQ('Biến trong lập trình được dùng để làm gì?', ['Lưu trữ dữ liệu', 'In ra màn hình', 'Tạo hàm', 'Import thư viện'], 0, 'Biến là một vị trí trong bộ nhớ dùng để lưu trữ giá trị dữ liệu trong quá trình chương trình chạy.', cat1.id, 'nhan_biet');
+  mkQ('Kết quả của phép toán 5 % 2 là bao nhiêu?', ['2', '1', '2.5', '0'], 1, 'Phép % (modulo) trả về phần dư của phép chia. 5 chia 2 dư 1.', cat1.id, 'nhan_biet');
+  mkQ('Đâu là vòng lặp for đúng cú pháp trong JavaScript?', ['for (i=0; i<10; i++)', 'for (let i=0; i<10; i++)', 'for (int i=0; i<10; i++)', 'for i = 0 to 10'], 1, 'JavaScript sử dụng từ khóa let/const/var để khai báo biến trong vòng lặp for.', cat1.id, 'thong_hieu');
+  mkQ('Phạm vi của biến được khai báo bằng let trong khối mã (block) là gì?', ['Toàn cục', 'Chỉ trong khối mã đó', 'Trong hàm', 'Trong file'], 1, 'Biến let có phạm vi block-scoped, chỉ tồn tại trong {} nơi nó được khai báo.', cat1.id, 'thong_hieu');
+  mkQ('Khái niệm "đệ quy" trong lập trình là gì?', ['Hàm gọi lại chính nó', 'Vòng lặp vô hạn', 'Hàm không trả về giá trị', 'Biến toàn cục'], 0, 'Đệ quy là kỹ thuật mà trong đó hàm gọi lại chính nó để giải quyết một bài toán bằng cách chia nhỏ nó.', cat1.id, 'thong_hieu');
+  mkQ('Mảng (array) trong JavaScript có chỉ số (index) bắt đầu từ bao nhiêu?', ['-1', '0', '1', 'Tùy chọn'], 1, 'Mảng trong JavaScript (và hầu hết ngôn ngữ lập trình) bắt đầu index từ 0.', cat1.id, 'nhan_biet');
+  mkQ('Độ phức tạp thời gian của thuật toán Binary Search là gì?', ['O(n)', 'O(n²)', 'O(log n)', 'O(1)'], 2, 'Binary Search chia đôi khoảng tìm kiếm mỗi bước, nên độ phức tạp là O(log n).', cat1.id, 'van_dung');
+  mkQ('Sự khác biệt giữa pass-by-value và pass-by-reference là gì?', ['Không có khác biệt', 'Pass-by-value sao chép giá trị, pass-by-reference truyền địa chỉ bộ nhớ', 'Pass-by-value nhanh hơn', 'Pass-by-reference chỉ dùng cho số'], 1, 'Pass-by-value tạo bản sao của giá trị, thay đổi bản sao không ảnh hưởng gốc. Pass-by-reference truyền địa chỉ, thay đổi sẽ ảnh hưởng đến dữ liệu gốc.', cat1.id, 'van_dung');
+  mkQ('Cho mảng arr = [3, 1, 4, 1, 5]. Kết quả của arr.indexOf(1) là gì?', ['0', '1', '3', '-1'], 1, 'indexOf trả về index của phần tử đầu tiên tìm thấy. Phần tử 1 xuất hiện đầu tiên tại index 1.', cat1.id, 'van_dung');
+  mkQ('Trong JavaScript, closure là gì?', ['Một cách đóng ứng dụng', 'Hàm có thể truy cập biến từ scope bên ngoài', 'Một kiểu dữ liệu', 'Phương thức của object'], 1, 'Closure là hàm nhớ và có thể truy cập các biến từ lexical scope của nó, ngay cả khi hàm đó được thực thi ở ngoài scope đó.', cat1.id, 'van_dung_cao');
+  mkQ('Đầu ra của đoạn code: console.log(typeof null) là gì?', ['null', 'undefined', 'object', 'number'], 2, 'Đây là một bug lịch sử của JavaScript. typeof null trả về "object" thay vì "null".', cat1.id, 'van_dung_cao');
+  mkQ('Phương pháp nào KHÔNG phải là cách tối ưu hóa thuật toán sắp xếp?', ['Giảm số phép so sánh', 'Tăng memory usage để đổi lấy thời gian', 'Luôn dùng Bubble Sort', 'Sử dụng Divide and Conquer'], 2, 'Bubble Sort có độ phức tạp O(n²), không phải phương pháp tối ưu. Các phương pháp như Merge Sort, Quick Sort O(n log n) mới là tối ưu.', cat1.id, 'van_dung_cao');
+  mkQ('Event Loop trong JavaScript dùng để làm gì?', ['Vẽ giao diện', 'Xử lý bất đồng bộ', 'Quản lý biến', 'Tạo hàm'], 1, 'Event Loop là cơ chế cho phép JavaScript (single-threaded) thực thi code bất đồng bộ bằng cách dùng call stack, callback queue và microtask queue.', cat1.id, 'van_dung_cao');
+  mkQ('Kết quả của: Boolean("") && Boolean(0) && null là gì?', ['true', 'false', 'undefined', 'Lỗi'], 1, 'Tất cả "", 0, và null đều là falsy values. Toán tử && trả về falsy value đầu tiên gặp, đó là "" (được coerce thành false).', cat1.id, 'thong_hieu');
+  mkQ('Phương thức Array.prototype.map() trả về gì?', ['Mảng gốc đã sửa đổi', 'Mảng mới với các phần tử được transform', 'Số lượng phần tử', 'Boolean'], 1, 'map() tạo ra mảng mới bằng cách gọi hàm callback lên từng phần tử của mảng gốc, không thay đổi mảng gốc.', cat1.id, 'thong_hieu');
+
+  // === DANH MUC 2: CO SO DU LIEU ===
+  mkQ('SQL là viết tắt của gì?', ['Simple Query Language', 'Structured Query Language', 'Standard Query Logic', 'System Query Language'], 1, 'SQL stands for Structured Query Language - Ngôn ngữ truy vấn có cấu trúc.', cat2.id, 'nhan_biet');
+  mkQ('Lệnh SQL nào dùng để lấy dữ liệu từ bảng?', ['GET', 'FETCH', 'SELECT', 'READ'], 2, 'SELECT là lệnh cơ bản để truy xuất dữ liệu từ một hoặc nhiều bảng trong cơ sở dữ liệu.', cat2.id, 'nhan_biet');
+  mkQ('Khóa chính (Primary Key) trong cơ sở dữ liệu có đặc điểm gì?', ['Được phép NULL', 'Có thể trùng lặp', 'Duy nhất và NOT NULL cho mỗi bản ghi', 'Chỉ là số nguyên'], 2, 'Primary Key phải là duy nhất (unique) và không được NULL. Nó dùng để định danh mỗi bản ghi trong bảng.', cat2.id, 'thong_hieu');
+  mkQ('INNER JOIN trả về những bản ghi nào?', ['Tất cả bản ghi từ cả hai bảng', 'Chỉ bản ghi khớp ở cả hai bảng', 'Tất cả từ bảng trái, kể cả không khớp', 'Tất cả từ bảng phải, kể cả không khớp'], 1, 'INNER JOIN chỉ trả về các bản ghi có giá trị khớp ở cả hai bảng dựa trên điều kiện JOIN.', cat2.id, 'thong_hieu');
+  mkQ('Mục đích của chuẩn hóa (Normalization) database là gì?', ['Tăng tốc độ truy vấn', 'Giảm dữ liệu dư thừa và tránh anomaly', 'Tăng kích thước database', 'Mã hóa dữ liệu'], 1, 'Normalization chia nhỏ bảng để loại bỏ dữ liệu dư thừa, tránh insert/update/delete anomaly.', cat2.id, 'thong_hieu');
+  mkQ('Index trong database giúp cải thiện điều gì?', ['Bảo mật', 'Tốc độ truy vấn', 'Dung lượng lưu trữ', 'Integrity'], 1, 'Index tạo cấu trúc dữ liệu bổ sung giúp tìm kiếm nhanh hơn, giống như mục lục trong sách.', cat2.id, 'van_dung');
+  mkQ('Viết lệnh SQL đếm số lượng sinh viên trong bảng "students" có điểm lớn hơn 8:', ['SELECT COUNT(*) FROM students WHERE score > 8', 'SELECT SUM(*) FROM students HAVING score > 8', 'COUNT students WHERE score > 8', 'SELECT number FROM students WHERE score > 8'], 0, 'COUNT(*) đếm số bản ghi thỏa mãn điều kiện WHERE.', cat2.id, 'van_dung');
+  mkQ('Transaction trong database tuân thủ thuộc tính ACID. "I" trong ACID là gì?', ['Integrity', 'Isolation', 'Implementation', 'Index'], 1, 'Isolation đảm bảo các transaction chạy song song không ảnh hưởng lẫn nhau như thể chúng chạy tuần tự.', cat2.id, 'van_dung');
+  mkQ('Để xóa toàn bộ dữ liệu trong bảng nhưng giữ cấu trúc bảng, dùng lệnh nào?', ['DROP TABLE', 'DELETE FROM table', 'TRUNCATE TABLE', 'REMOVE TABLE'], 2, 'TRUNCATE TABLE xóa tất cả rows nhanh hơn DELETE, không ghi log từng row, và reset identity counter.', cat2.id, 'van_dung');
+  mkQ('Trong thiết kế ERD, quan hệ 1:N (one-to-many) được biểu diễn như thế nào?', ['Bảng cha chứa foreign key của bảng con', 'Bảng con chứa foreign key tham chiếu đến bảng cha', 'Cả hai bảng đều chứa foreign key', 'Tạo bảng thứ ba'], 1, 'Trong quan hệ 1:N, foreign key được đặt ở bảng con (bên N) để tham chiếu đến primary key của bảng cha (bên 1).', cat2.id, 'van_dung_cao');
+  mkQ('Deadlock trong database là gì?', ['Cơ sở dữ liệu bị lỗi', 'Hai transaction chờ lẫn nhau để giải phóng lock', 'Mất kết nối', 'Bảng bị xóa'], 1, 'Deadlock xảy ra khi Transaction A giữ lock của resource X và chờ Y, trong khi Transaction B giữ lock của Y và chờ X.', cat2.id, 'van_dung_cao');
+  mkQ('Phân biệt BETWEEN và IN trong SQL: đâu là đúng?', ['BETWEEN dùng cho chuỗi, IN dùng cho số', 'BETWEEN kiểm tra khoảng, IN kiểm tra tập hợp giá trị', 'Cả hai giống hệt nhau', 'IN nhanh hơn BETWEEN'], 1, 'BETWEEN kiểm tra giá trị nằm trong khoảng (bao gồm cả 2 đầu). IN kiểm tra giá trị thuộc một tập hợp liệt kê.', cat2.id, 'van_dung_cao');
+  mkQ('Stored Procedure có ưu điểm gì so với việc gửi nhiều lệnh SQL riêng lẻ?', ['Không có ưu điểm', 'Giảm network traffic, tăng performance, tăng bảo mật', 'Chỉ dùng cho SELECT', 'Dễ bị SQL Injection hơn'], 1, 'Stored Procedure được compile trước, giảm network round-trips, và có thể kiểm soát quyền truy cập chi tiết hơn.', cat2.id, 'van_dung_cao');
+  mkQ('Khác biệt giữa WHERE và HAVING trong SQL là gì?', ['Không có khác biệt', 'WHERE lọc row trước GROUP BY, HAVING lọc sau GROUP BY', 'HAVING nhanh hơn', 'WHERE chỉ dùng với SELECT'], 1, 'WHERE filter rows trước khi aggregate. HAVING filter sau khi GROUP BY, có thể dùng hàm aggregate như COUNT, SUM.', cat2.id, 'thong_hieu');
+  mkQ('Đâu là dạng chuẩn hóa (Normal Form) thứ 3 (3NF)?', ['Đã ở 1NF và không có partial dependency', 'Đã ở 2NF và không có transitive dependency', 'Mỗi cell chỉ chứa 1 giá trị', 'Bảng chỉ có 3 cột'], 1, '3NF yêu cầu bảng ở 2NF và không có transitive dependency — tức là mọi cột không khóa phải phụ thuộc trực tiếp vào primary key.', cat2.id, 'van_dung_cao');
+
+  // --- KY THI ---
+  const now = new Date();
+  const startTime1 = new Date(now); startTime1.setHours(startTime1.getHours() - 1);
+  const endTime1 = new Date(now); endTime1.setHours(endTime1.getHours() + 23);
+  const startTime2 = new Date(now); startTime2.setDate(startTime2.getDate() + 1); startTime2.setHours(8, 0, 0, 0);
+  const endTime2 = new Date(startTime2); endTime2.setHours(endTime2.getHours() + 3);
+  const startTime3 = new Date(now); startTime3.setDate(startTime3.getDate() - 2); startTime3.setHours(8, 0, 0, 0);
+  const endTime3 = new Date(startTime3); endTime3.setHours(endTime3.getHours() + 2);
+
+  // Ky thi 1: Chon thu cong, dang mo
+  const exam1 = DB.createExam({
+    title: 'Kiểm tra giữa kỳ - Lập trình cơ bản',
+    description: 'Bài kiểm tra 45 phút涵盖了 kiến thức lập trình cơ bản JavaScript',
+    duration: 45, totalScore: 10, passingScore: 5, maxAttempts: 2,
+    startTime: startTime1.toISOString(), endTime: endTime1.toISOString(),
+    questionMode: 'manual', shuffleQuestions: true, shuffleOptions: true,
+    allowReview: true, showScoreImmediately: true,
+    randomConfig: null
+  });
+  // Chon 10 cau tu danh muc 1
+  const qCat1 = DB.getQuestionsByCategory(cat1.id);
+  DB.setExamQuestions(exam1.id, qCat1.slice(0, 10).map(q => q.id));
+
+  // Ky thi 2: Ngau nhien, sap dien ra
+  const exam2 = DB.createExam({
+    title: 'Kiểm tra cuối kỳ - Cơ sở dữ liệu',
+    description: 'Bài thi trắc nghiệm ngẫu nhiên về cơ sở dữ liệu và SQL',
+    duration: 30, totalScore: 10, passingScore: 5, maxAttempts: 1,
+    startTime: startTime2.toISOString(), endTime: endTime2.toISOString(),
+    questionMode: 'random', shuffleQuestions: true, shuffleOptions: true,
+    allowReview: true, showScoreImmediately: true,
+    randomConfig: { nhan_biet: 2, thong_hieu: 3, van_dung: 2, van_dung_cao: 1 }
+  });
+
+  // Ky thi 3: Da ket thuc
+  const exam3 = DB.createExam({
+    title: 'Test nhanh - Lập trình',
+    description: 'Bài test nhanh 15 phút',
+    duration: 15, totalScore: 10, passingScore: 6, maxAttempts: 1,
+    startTime: startTime3.toISOString(), endTime: endTime3.toISOString(),
+    questionMode: 'manual', shuffleQuestions: false, shuffleOptions: true,
+    allowReview: true, showScoreImmediately: true,
+    randomConfig: null
+  });
+  DB.setExamQuestions(exam3.id, qCat1.slice(10, 15).map(q => q.id));
+
+  // --- TAO KET QUA MAU CHO KY THI DA KET THUC ---
+  function createFakeAttempt(examId, userId, score, timeTaken) {
+    const exam = DB.getExamById(examId);
+    const eqs = DB.getExamQuestions(examId);
+    const total = eqs.length;
+    const pointPerQ = exam.totalScore / total;
+    const correct = Math.round(score / pointPerQ);
+    const wrong = Math.floor(Math.random() * (total - correct));
+    const unanswered = total - correct - wrong;
+    const start = new Date(exam.startTime).getTime() + Math.random() * 3600000;
+    return DB.createAttempt({
+      examId, userId, startTimestamp: start,
+      endTime: start + exam.duration * 60000,
+      status: 'submitted', submittedAt: new Date(start + timeTaken * 1000).toISOString(),
+      score, totalCorrect: correct, totalWrong: wrong, totalUnanswered: Math.max(0, unanswered),
+      passed: score >= exam.passingScore, timeTaken, tabSwitchCount: Math.floor(Math.random() * 3)
+    });
+  }
+
+  createFakeAttempt(exam3.id, studentIds[0], 8.0, 720);
+  createFakeAttempt(exam3.id, studentIds[1], 6.0, 850);
+  createFakeAttempt(exam3.id, studentIds[2], 4.0, 900);
+  createFakeAttempt(exam3.id, studentIds[3], 9.0, 600);
+  createFakeAttempt(exam3.id, studentIds[4], 7.0, 780);
+
+  // Them ket qua cho ky thi 1 (dang mo)
+  createFakeAttempt(exam1.id, studentIds[0], 7.5, 2400);
+  createFakeAttempt(exam1.id, studentIds[1], 5.5, 2600);
+
+  DB.save();
+  console.log('✅ Seed database hoàn thành');
+}
+
+// ================================================================
+// DANG KY ROUTES
+// ================================================================
+function registerRoutes() {
+  // Public
+  Router.register('home', pageHome);
+  Router.register('login', pageLogin);
+  Router.register('register', pageRegister);
+  Router.register('about', pageAbout);
+
+  // Admin/Teacher
+  Router.register('dashboard', pageDashboard, () => !!Auth.requireRole('admin', 'teacher'));
+  Router.register('users', pageUsers, () => !!Auth.requireRole('admin'));
+  Router.register('categories', pageCategories, () => !!Auth.requireRole('admin', 'teacher'));
+  Router.register('questions', pageQuestions, () => !!Auth.requireRole('admin', 'teacher'));
+  Router.register('exams', pageExams, () => !!Auth.requireRole('admin', 'teacher'));
+  Router.register('results', pageResults, () => !!Auth.requireRole('admin', 'teacher'));
+  Router.register('statistics', pageStatistics, () => !!Auth.requireRole('admin', 'teacher'));
+
+  // Student
+  Router.register('my-exams', pageMyExams, () => !!Auth.requireRole('student'));
+  Router.register('my-results', pageMyResults, () => !!Auth.requireRole('student'));
+  Router.register('my-history', pageMyHistory, () => !!Auth.requireRole('student'));
+
+  // Dynamic routes - exam take
+  Router.register('exam-take', null, null); // Xu ly rieng
+  Router.register('result', null, null);
+  Router.register('review', null, null);
+}
+
+// ================================================================
+// RESOLVE DYNAMIC ROUTES
+// ================================================================
+function resolveDynamicRoute(path) {
+  // exam-take-{attemptId}
+  const examMatch = path.match(/^exam-take-(.+)$/);
+  if (examMatch) { pageExamTake(examMatch[1]); return true; }
+
+  // result-{attemptId}
+  const resultMatch = path.match(/^result-(.+)$/);
+  if (resultMatch) { pageResult(resultMatch[1]); return true; }
+
+  // review-{attemptId}
+  const reviewMatch = path.match(/^review-(.+)$/);
+  if (reviewMatch) { pageReview(reviewMatch[1]); return true; }
+
+  return false;
+}
+
+// ================================================================
+// OVERRIDE ROUTER RESOLVE DE HO TRO DYNAMIC ROUTES
+// ================================================================
+const _originalResolve = Router.resolve.bind(Router);
+Router.resolve = function () {
+  const path = this.getCurrentPath();
+  if (resolveDynamicRoute(path)) return;
+  _originalResolve();
+};
+
+// ================================================================
+// RESET DATABASE (dung cho admin)
+// ================================================================
+window.resetDatabase = function () {
+  showModal('Reset dữ liệu', '<p class="text-slate-600">Bạn có chắc muốn xóa toàn bộ dữ liệu và khôi phục dữ liệu mẫu? Hành động này không thể hoàn tác.</p>', [
+    { label: 'Hủy', class: 'bg-slate-100 text-slate-700 hover:bg-slate-200', onclick: 'closeModal()' },
+    { label: 'Reset', class: 'bg-red-600 text-white hover:bg-red-700', onclick: 'confirmResetDB()' }
+  ]);
+};
+window.confirmResetDB = function () {
+  localStorage.removeItem(DB._key);
+  DB.init();
+  seedDatabase();
+  closeModal();
+  showToast('Đã reset database', 'success');
+  Router.navigate('dashboard');
+};
+
+// ================================================================
+// KHOI DONG HE THONG
+// ================================================================
+function initApp() {
+  DB.init();
+  seedDatabase();
+  registerRoutes();
+  Router.init();
+  lucide.createIcons();
+
+  // Global keyboard shortcuts cho trang thi
+  document.addEventListener('keydown', function (e) {
+    const path = Router.getCurrentPath();
+    if (!path.startsWith('exam-take-')) return;
+
+    if (e.key === 'ArrowRight' || e.key === 'n') { e.preventDefault(); window._examNext?.(); }
+    if (e.key === 'ArrowLeft' || e.key === 'p') { e.preventDefault(); window._examPrev?.(); }
+    if (e.key === 'm') { e.preventDefault(); window._examToggleMark?.(); }
+    // 1-4 de chon dap an
+    if (['1', '2', '3', '4'].includes(e.key)) {
+      e.preventDefault();
+      const app = document.getElementById('app');
+      if (!app) return;
+      const optBtns = app.querySelectorAll('.option-item');
+      const idx = parseInt(e.key) - 1;
+      if (optBtns[idx]) optBtns[idx].click();
+    }
+  });
+}
+
+// Chay khi DOM san sang
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', initApp);
+} else {
+  initApp();
+}
